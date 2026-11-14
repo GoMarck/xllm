@@ -149,8 +149,15 @@ if(USE_YUANRONG)
         "LINKER:--as-needed"
         "LINKER:--version-script=${CMAKE_BINARY_DIR}/xllm_yuanrong_bridge_symbols.map")
   endif()
+  if(CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+    set(_yuanrong_bridge_output_dir "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+  elseif(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+    set(_yuanrong_bridge_output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+  else()
+    set(_yuanrong_bridge_output_dir "${CMAKE_BINARY_DIR}/xllm")
+  endif()
   set_target_properties(xllm_yuanrong_store_bridge PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/xllm/core/server"
+    LIBRARY_OUTPUT_DIRECTORY "${_yuanrong_bridge_output_dir}"
     BUILD_RPATH "$ORIGIN;${YUANRONG_LIB_DIR}"
     INSTALL_RPATH "$ORIGIN;${YUANRONG_LIB_DIR}"
   )

@@ -16,7 +16,7 @@
 # a third-party target.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEVICE="npu"
 
 while [[ $# -gt 0 ]]; do
@@ -79,40 +79,30 @@ WHEEL="$(ls -t "${ROOT}"/dist/*.whl 2>/dev/null | head -1 || true)"
 log "wheel: ${WHEEL}"
 
 # --------------------------------------------------------------- verify -----
-# A wheel without the bridge would silently disable the backend at runtime, so
-# the build is only considered successful when the shim is actually inside.
-python3 - "${WHEEL}" "${ROOT}" <<'PY'
-import os
+# The bridge is a build dependency of both hosts and is staged by CMake.
+# Reject incomplete packages instead of injecting a possibly stale library.
+python3 - "${WHEEL}" <<'PY'
 import sys
 import zipfile
+from pathlib import PurePosixPath
 
-wheel_path, root = sys.argv[1], sys.argv[2]
+from scripts.logger import logger
+
+wheel_path = sys.argv[1]
 bridge_name = "libxllm_yuanrong_store_bridge.so"
 
 with zipfile.ZipFile(wheel_path) as wheel:
-    names = wheel.namelist()
+    names = set(wheel.namelist())
 
-hits = [n for n in names if n.endswith(bridge_name)]
-if not hits:
-    # The bridge is built into the cmake output dir. If setup.py did not pick it
-    # up, drop it next to the xllm binary so $ORIGIN still resolves it.
-    candidates = [n for n in names if n.endswith("core/server/xllm")]
-    if not candidates:
-        sys.exit("wheel has no xllm binary either; nothing to attach the bridge to")
-    target = candidates[0][: -len("xllm")] + bridge_name
-    source = os.path.join(root, "xllm", "core", "server", bridge_name)
-    if not os.path.isfile(source):
-        sys.exit(f"bridge not found at {source}; run the build again")
-    with zipfile.ZipFile(wheel_path, "a") as wheel:
-        wheel.write(source, target)
-    print(f"[verify] injected {bridge_name} -> {target}")
-    with zipfile.ZipFile(wheel_path) as wheel:
-        names = wheel.namelist()
-    hits = [n for n in names if n.endswith(bridge_name)]
-
-if not hits:
-    sys.exit("wheel still has no bridge after injection")
-print(f"[verify] {bridge_name} present at {hits[0]}")
+hosts = [name for name in names if name == "xllm/xllm" or name == "xllm/libxllm.so"]
+if len(hosts) != 1:
+    logger.error("Wheel must contain exactly one xllm host artifact")
+    sys.exit(1)
+bridge_path = str(PurePosixPath(hosts[0]).with_name(bridge_name))
+if bridge_path not in names:
+    logger.error(f"Wheel is missing {bridge_path}; rebuild with USE_YUANRONG=ON")
+    sys.exit(1)
+logger.info(f"Wheel contains {bridge_path}")
 PY
 
 log "done"

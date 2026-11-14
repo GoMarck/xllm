@@ -130,6 +130,15 @@ endif()
 xllm_export_native_host(xllm)
 xllm_export_native_host(xllm_export)
 
+if(USE_YUANRONG)
+  # The bridge is loaded at runtime, so the linker cannot infer this build edge.
+  add_dependencies(xllm xllm_yuanrong_store_bridge)
+  add_dependencies(xllm_export xllm_yuanrong_store_bridge)
+  if(TARGET spawn_worker)
+    add_dependencies(spawn_worker xllm_yuanrong_store_bridge)
+  endif()
+endif()
+
 if(USE_NPU)
   include(npu_runtime)
   foreach(_native_host xllm xllm_export)

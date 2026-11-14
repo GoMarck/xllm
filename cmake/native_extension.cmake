@@ -145,4 +145,38 @@ function(xllm_export_native_host target)
     # symbols must be present in the module's dynamic symbol table.
     target_link_options(${target} PRIVATE -Wl,--export-dynamic)
   endif()
+
+  if(USE_YUANRONG AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Keep host registries exported, but do not let the DS SDK bind to the
+    # host's private gflags registry or its incompatible RPC implementations.
+    set(_private_archives
+      libgflags.a libgflags_nothreads.a libglog.a libbrpc.a
+      libprotobuf.a libprotobuf-lite.a libprotoc.a libleveldb.a libsnappy.a
+      libgrpc.a libgrpc++.a libgpr.a libre2.a libssl.a libcrypto.a libz.a)
+    list(JOIN _private_archives ":" _excluded_archives)
+    target_link_options(${target} PRIVATE
+      "LINKER:--exclude-libs=${_excluded_archives}")
+
+    # Header instantiations also occur in xLLM objects, outside those archives.
+    # Abseil's split archives likewise share one private C++ namespace.
+    set(_private_namespaces
+      google gflags absl brpc butil bthread bvar logging leveldb grpc grpc_core re2)
+    set(_private_symbols "{\n  local:\n    extern \"C++\" {\n")
+    foreach(_namespace IN LISTS _private_namespaces)
+      string(APPEND _private_symbols
+        "      ${_namespace}::*;\n"
+        "      vtable?for?${_namespace}::*;\n"
+        "      typeinfo?for?${_namespace}::*;\n"
+        "      typeinfo?name?for?${_namespace}::*;\n"
+        "      guard?variable?for?${_namespace}::*;\n")
+    endforeach()
+    string(APPEND _private_symbols
+      "    };\n    bthread_*;\n    grpc_*;\n    gpr_*;\n"
+      "    upb_*;\n    _upb_*;\n    utf8_range_*;\n};\n")
+    set(_symbols_file "${PROJECT_BINARY_DIR}/xllm_yuanrong_host_symbols.map")
+    file(WRITE "${_symbols_file}" "${_private_symbols}")
+    target_link_options(${target} PRIVATE
+      "LINKER:--version-script=${_symbols_file}")
+    set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${_symbols_file}")
+  endif()
 endfunction()
