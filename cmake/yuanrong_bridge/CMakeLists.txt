@@ -66,6 +66,41 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     "${symbols_file}" "${XLLM_SOURCE_ROOT}/cmake/check_yuanrong_bridge.cmake")
   find_program(YUANRONG_READELF NAMES "${CMAKE_READELF}" readelf llvm-readelf REQUIRED)
   find_program(YUANRONG_NM NAMES "${CMAKE_NM}" nm llvm-nm REQUIRED)
+  # GCC emits optional weak TLS initializers even for trivial thread_locals.
+  # AArch64 GNU ld does not support -z nodynamic-undefined-weak. Mark these
+  # SDK references hidden so missing initializers resolve to zero locally;
+  # any real initializer in the static closure still supplies its definition.
+  get_property(private_targets DIRECTORY PROPERTY IMPORTED_TARGETS)
+  set(private_archives "")
+  foreach(private_target IN LISTS private_targets)
+    if(private_target MATCHES "^DatasystemPrivate::")
+      get_target_property(private_type "${private_target}" TYPE)
+      if(private_type STREQUAL "STATIC_LIBRARY")
+        get_target_property(archive "${private_target}" IMPORTED_LOCATION)
+        list(APPEND private_archives "${archive}")
+      endif()
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES private_archives)
+  execute_process(COMMAND "${YUANRONG_NM}" --undefined-only --format=posix ${private_archives}
+    RESULT_VARIABLE nm_status OUTPUT_VARIABLE sdk_undefined ERROR_VARIABLE nm_error)
+  if(NOT nm_status EQUAL 0)
+    message(FATAL_ERROR "Cannot inspect DS SDK TLS references: ${nm_error}")
+  endif()
+  string(REPLACE "\n" ";" sdk_undefined_lines "${sdk_undefined}")
+  set(tls_initializers "")
+  foreach(line IN LISTS sdk_undefined_lines)
+    if(line MATCHES "^(_ZTH[A-Za-z0-9_]+)[ \t]+w([ \t]|$)")
+      list(APPEND tls_initializers "${CMAKE_MATCH_1}")
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES tls_initializers)
+  set(tls_source "${CMAKE_CURRENT_BINARY_DIR}/private_sdk_tls.cpp")
+  file(WRITE "${tls_source}" "// Generated from the private SDK's optional TLS initializers.\n")
+  foreach(symbol IN LISTS tls_initializers)
+    file(APPEND "${tls_source}" "__asm__(\".weak ${symbol}\\n.hidden ${symbol}\");\n")
+  endforeach()
+  target_sources(xllm_yuanrong_store_bridge PRIVATE "${tls_source}")
   add_custom_command(TARGET xllm_yuanrong_store_bridge POST_BUILD
     COMMAND "${CMAKE_COMMAND}"
       "-DBRIDGE_FILE=$<TARGET_FILE:xllm_yuanrong_store_bridge>"
