@@ -341,6 +341,11 @@ def _collect_submodule_init_issues(repo_root: str) -> dict[str, str]:
         path = parts[1]
         commit = parts[0]
 
+        # CATLASS's Python DSL and LLVM toolchain are not used by xLLM's C++
+        # operators or the prebuilt TileLang Ascend compiler.
+        if path.startswith("third_party/xllm_ops/third_party/catlass/python/"):
+            continue
+
         if state == "-":
             issues[path] = f"uninitialized (expected commit starts with {commit})"
         elif state == "+":
