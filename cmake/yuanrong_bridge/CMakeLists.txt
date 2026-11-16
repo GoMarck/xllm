@@ -96,13 +96,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endforeach()
   list(REMOVE_DUPLICATES tls_initializers)
   set(tls_source "${CMAKE_CURRENT_BINARY_DIR}/private_sdk_tls.cpp")
-  file(WRITE "${tls_source}" "// Generated from the private SDK's optional TLS initializers.\n")
+  file(WRITE "${tls_source}"
+    "// Copyright 2026 The xLLM Authors. All Rights Reserved.\n"
+    "// Generated from the private SDK's optional TLS initializers.\n\n")
   set(tls_index 0)
   foreach(symbol IN LISTS tls_initializers)
     # A used reference is necessary: GAS drops unreferenced weak declarations.
     file(APPEND "${tls_source}"
       "extern \"C\" void ${symbol}() __attribute__((weak, visibility(\"hidden\")));\n"
-      "[[gnu::used]] static auto* const private_tls_${tls_index} = &${symbol};\n")
+      "namespace {\n"
+      "[[gnu::used]] auto* const kPrivateTlsInitializer${tls_index} = &${symbol};\n"
+      "}  // namespace\n")
     math(EXPR tls_index "${tls_index} + 1")
   endforeach()
   target_sources(xllm_yuanrong_store_bridge PRIVATE "${tls_source}")
