@@ -531,10 +531,12 @@ if(USE_NPU)
   message(STATUS "VCPKG_INCLUDE_DIR = ${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include")
   include_directories("${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include")
 
+  find_package(ATBCustomize REQUIRED)
   add_subdirectory(
     "${XLLM_ATB_LAYERS_SOURCE_DIR}"
     "${CMAKE_BINARY_DIR}/xllm_atb_layers"
   )
+  target_link_libraries(xllm_atb_layers PRIVATE atb_customize)
   message(STATUS "Configured xllm_atb_layers from source: ${XLLM_ATB_LAYERS_SOURCE_DIR}")
 
   if(EXISTS "$ENV{NPU_HOME_PATH}/include/aclnnop")
