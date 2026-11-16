@@ -77,13 +77,6 @@ python setup.py install --device npu
 
 You can also install directly with `python setup.py install`; the installer automatically detects the backend from the current PyTorch environment when `--device` is omitted.
 
-For a build environment without an NPU device, explicitly pass `--device npu`
-and set `XLLM_ASCEND_PLATFORM` to `a2` (910B), `a3` (910_93/910C), or `a5` (950)
-to select the TileLang build platform. `TORCH_DEVICE_BACKEND_AUTOLOAD=0` disables
-Torch device-backend autoloading in the build process. Matching CANN tools and
-torch_npu headers and libraries are still required; these settings do not provide
-NPU runtime capability.
-
 An NPU wheel includes the complete xllm_ops vendor from the build environment, including shared libraries, operator metadata, tiling libraries, and kernels. Packaging follows the build's vendor selection: `${ASCEND_OPP_PATH}/vendors/custom_xllm_math` when its `op_api/include/aclnnop` directory exists, otherwise the legacy `${ASCEND_OPP_PATH}/vendors/xllm`. Both layouts are packaged at the fixed `xllm/opp/vendors/custom_xllm_math` path used by the launcher and native libraries. Packaging requires complete installed operator resources matching the Git revision of `third_party/xllm_ops`; missing resources or a revision mismatch fail the build. Other vendors are not bundled. Prepare any additional operator packages required by your model according to its deployment instructions.
 
 To install an existing wheel on the target machine without rebuilding, replace the path below with the actual wheel file:

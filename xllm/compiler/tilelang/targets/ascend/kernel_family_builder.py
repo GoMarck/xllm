@@ -3,14 +3,10 @@ from __future__ import annotations
 import importlib
 import multiprocessing
 import os
-from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from types import ModuleType
-from typing import Any
 
 from ...common.cache import compute_cache_key, is_cache_hit
 from ...common.manifest import KernelAbi, KernelFamilyManifest, KernelVariantManifest
@@ -93,29 +89,6 @@ def _write_text_if_changed(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-@contextmanager
-def _ascend_codegen_target(device: str | None) -> Iterator[None]:
-    import tilelang
-
-    storage_rewrite = tilelang.transform.AscendStorageRewrite
-    lower = tilelang.engine.lower
-
-    def rewrite_storage(is_npu: bool = False) -> Any:
-        # The pinned compiler chooses this flag from torch.npu.is_available().
-        # Offline Ascend compilation still needs the NPU storage rewrite;
-        # otherwise it aliases buffers with incompatible element types.
-        return storage_rewrite(is_npu=True)
-
-    try:
-        tilelang.transform.AscendStorageRewrite = rewrite_storage
-        if device is not None:
-            tilelang.engine.lower = partial(lower, platform=device.upper())
-        yield
-    finally:
-        tilelang.transform.AscendStorageRewrite = storage_rewrite
-        tilelang.engine.lower = lower
-
-
 def _run_variant_worker(args: _VariantWorkerArgs) -> _VariantBuildResult:
     mod = importlib.import_module(args.kernel_cls_module)
     kernel_cls = getattr(mod, args.kernel_cls_name)
@@ -124,9 +97,7 @@ def _run_variant_worker(args: _VariantWorkerArgs) -> _VariantBuildResult:
     compile_spec = plan.compile_spec
     kernel_spec = plan.kernel_spec
 
-    # Workers run one lowering at a time in separate spawned processes.
-    with _ascend_codegen_target(args.toolchain_options.get("device")):
-        source = kernel_cls.generate_source(**compile_spec.specialization)
+    source = kernel_cls.generate_source(**compile_spec.specialization)
     rendered_source = abi_entry.rename_variant_internal_symbols(
         abi_entry.rename_entry_symbol(source, compile_spec.source_entry_symbol, args.entry_symbol),
         compile_spec.variant_key,

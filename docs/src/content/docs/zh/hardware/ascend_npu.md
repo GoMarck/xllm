@@ -77,12 +77,6 @@ python setup.py install --device npu
 
 也可以直接使用 `python setup.py install` 安装；省略 `--device` 时，安装脚本会根据当前 PyTorch 环境自动识别设备后端。
 
-在没有 NPU 设备的编译环境中，显式指定 `--device npu`，并设置
-`XLLM_ASCEND_PLATFORM=a2`（910B）、`a3`（910_93/910C）或 `a5`（950），
-以选择 TileLang 的编译平台。`TORCH_DEVICE_BACKEND_AUTOLOAD=0` 可以关闭编译进程中
-Torch 的设备后端自动加载。构建仍需要匹配的 CANN 工具链、torch_npu 头文件和库；
-这些设置不提供 NPU 运行能力。
-
 NPU wheel 会携带构建环境中完整的 xllm_ops vendor，包含动态库、算子描述、tiling 库和 kernel。打包时与构建使用相同的选择规则：如果 `${ASCEND_OPP_PATH}/vendors/custom_xllm_math/op_api/include/aclnnop` 目录存在，则选择 `custom_xllm_math`；否则选择旧版 `${ASCEND_OPP_PATH}/vendors/xllm`。两种布局均打包到启动器和原生库使用的固定路径 `xllm/opp/vendors/custom_xllm_math`。打包时要求已安装的算子资源完整，且其版本与 `third_party/xllm_ops` 的 Git 提交一致；资源缺失或版本不匹配会使构建失败。其他 vendor 不会一并打包，模型所需的额外算子包仍需按对应部署说明准备。
 
 已有 wheel 时，可以直接在目标机器安装，无需重新编译。将下方路径替换为实际 wheel 文件：
