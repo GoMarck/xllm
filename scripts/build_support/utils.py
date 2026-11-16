@@ -44,6 +44,12 @@ def get_cpu_arch() -> str:
 
 
 def get_ascend_platform() -> str:
+    target_platform = os.getenv("XLLM_ASCEND_PLATFORM")
+    if target_platform is not None:
+        if target_platform not in ("a2", "a3", "a5"):
+            raise ValueError("XLLM_ASCEND_PLATFORM must be a2, a3, or a5")
+        return target_platform
+
     if not hasattr(get_ascend_platform, "_cached_platform"):
         set_npu_envs()
         import acl

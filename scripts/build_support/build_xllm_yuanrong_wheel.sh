@@ -41,7 +41,10 @@ case "${DEVICE}" in
   npu)
     CANN="${ASCEND_HOME_PATH:-/usr/local/Ascend/ascend-toolkit/latest}"
     [[ -d "${CANN}" ]] || die "CANN not found at ${CANN}; export ASCEND_HOME_PATH or source set_env.sh"
-    python3 -c 'import torch_npu' 2>/dev/null || die "torch_npu is not importable; the NPU build needs it"
+    # Importing torch_npu also loads the device driver; compilation only needs
+    # the installed package's headers and libraries, which CMake checks later.
+    python3 -c 'from importlib.metadata import distribution; distribution("torch_npu")' \
+      2>/dev/null || die "torch_npu is not installed; the NPU build needs it"
     ;;
   cuda)
     python3 -c 'import sys, torch; sys.exit(0 if torch.cuda.is_available() else 1)' \
