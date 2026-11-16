@@ -127,6 +127,45 @@ Current support covers ordinary non-PD text inference with prefix caching enable
 | `store_yuanrong_bridge_path` | `string` | `""` | Path to `libxllm_yuanrong_store_bridge.so`. Empty uses the loader search path. |
 | `enable_control_h2d_block_num` | `bool` | `false` | Whether to control the number of H2D copy blocks. |
 
+Building the YuanRong backend requires an independently installed DS static PIC
+SDK whose CMake package provides `DatasystemPrivate::client`. DS keeps its own
+dependency versions and patches. The SDK and bridge must use compatible
+architectures, standard libraries, and C++ ABIs. A DS Python wheel does not
+replace this SDK.
+
+```bash
+YUANRONG_ROOT=/path/to/ds-sdk-install \
+  bash scripts/build_support/build_xllm_yuanrong_wheel.sh --device npu
+```
+
+For a direct CMake build, set
+`-DUSE_YUANRONG=ON -DYUANRONG_ROOT=/path/to/ds-sdk-install`.
+xllm embeds the DS client and its private dependencies in
+`libxllm_yuanrong_store_bridge.so`, exports only the five `xllm_yr_store_*` C
+entry points, and checks dynamic dependencies and symbols after linking on Linux.
+xllm loads the bridge dynamically; the DS SDK library directory is not needed
+in `LD_LIBRARY_PATH` at runtime.
+
+The same bridge target can also be built independently, without Torch or a device
+toolchain, to validate the SDK first:
+
+```bash
+cmake -S cmake/yuanrong_bridge -B build-yuanrong-bridge \
+  -DYUANRONG_ROOT=/path/to/ds-sdk-install -DCMAKE_BUILD_TYPE=Release
+cmake --build build-yuanrong-bridge -j4
+python3 -m scripts.build_support.validate_yuanrong_bridge \
+  --bridge build-yuanrong-bridge/xllm/libxllm_yuanrong_store_bridge.so \
+  --host 127.0.0.1 --port <worker-port> --clients 4
+```
+
+The validation script requires a running real Host KV Worker. The DS SDK delivered
+on 2026-11-16 corresponds to source commit
+`7fa20a784473a8cffa758759ac81984d0967ba30` and supports Linux aarch64, libstdc++,
+and ABI=1. The bridge does not inherit the host's Torch ABI compile options.
+This SDK is known to require GLIBC 2.34, GLIBCXX 3.4.30, and CXXABI 1.3.13.
+On Linux the bridge uses `RTLD_NODELETE` to remain loaded until process exit;
+destroying a client does not unload DS process-wide state.
+
 ## BeamSearchConfig
 
 | Parameter | Type | Default | Description |

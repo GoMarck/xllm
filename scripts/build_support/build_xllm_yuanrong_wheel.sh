@@ -5,9 +5,8 @@
 #   ./build_xllm_yuanrong_wheel.sh --device cuda
 #
 # Environment:
-#   YUANRONG_ROOT   YuanRong SDK root (the dir holding include/ and lib/).
-#                   Auto-detected from the installed openyuanrong_datasystem
-#                   wheel when unset.
+#   YUANRONG_ROOT   Installed DS static PIC SDK prefix containing
+#                   lib/cmake/DatasystemPrivate (or lib64/cmake/...). Required.
 #   CMAKE_ARGS      extra cmake arguments, appended to the ones set here.
 #
 # The xllm binary cannot be built without a device toolchain: the CUDA path
@@ -31,24 +30,11 @@ log() { printf '[build] %s\n' "$*"; }
 die() { printf '[build] ERROR: %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- SDK --------
-if [[ -z "${YUANRONG_ROOT:-}" ]]; then
-  YUANRONG_ROOT="$(python3 - <<'PY' 2>/dev/null || true
-import os
-import yr.datasystem
-print(os.path.dirname(yr.datasystem.__file__))
-PY
-)"
-fi
-[[ -n "${YUANRONG_ROOT}" ]] || die "YuanRong SDK not found. Install openyuanrong_datasystem-*.whl or set YUANRONG_ROOT."
-[[ -f "${YUANRONG_ROOT}/include/datasystem/kv_client.h" ]] || die "${YUANRONG_ROOT} has no include/datasystem/kv_client.h"
-if [[ -f "${YUANRONG_ROOT}/lib/libdatasystem.so" ]]; then
-  YUANRONG_LIB_DIR="${YUANRONG_ROOT}/lib"
-elif [[ -f "${YUANRONG_ROOT}/lib64/libdatasystem.so" ]]; then
-  YUANRONG_LIB_DIR="${YUANRONG_ROOT}/lib64"
-else
-  die "${YUANRONG_ROOT} has no lib/libdatasystem.so"
-fi
-log "YuanRong SDK: ${YUANRONG_ROOT}"
+[[ -n "${YUANRONG_ROOT:-}" ]] || die "Set YUANRONG_ROOT to the installed DS static PIC SDK prefix."
+[[ -f "${YUANRONG_ROOT}/lib/cmake/DatasystemPrivate/DatasystemPrivateConfig.cmake" || \
+   -f "${YUANRONG_ROOT}/lib64/cmake/DatasystemPrivate/DatasystemPrivateConfig.cmake" ]] \
+  || die "${YUANRONG_ROOT} has no DatasystemPrivate CMake package; a DS Python wheel is insufficient."
+log "DS static PIC SDK: ${YUANRONG_ROOT}"
 
 # ----------------------------------------------------------- toolchain ------
 case "${DEVICE}" in
@@ -107,5 +93,4 @@ PY
 
 log "done"
 log "install:  pip install ${WHEEL}"
-log "runtime:  export LD_LIBRARY_PATH=${YUANRONG_LIB_DIR}:\$LD_LIBRARY_PATH"
 log "check:    xllm --store_backend=yuanrong --store_yuanrong_host=<worker> --store_yuanrong_port=<port>"

@@ -16,9 +16,8 @@ limitations under the License.
 // Pure C ABI bridge over the YuanRong KV client. The SDK itself ships under the
 // `datasystem` name, which is why the header, namespace and library keep it.
 //
-// Only this shared object links libdatasystem. xLLM loads it at runtime and
-// talks to it through the xllm_yr_store_* symbols below, so the main binary
-// keeps zero YuanRong/abseil/grpc symbol dependency.
+// This shared object embeds the private static DS SDK and its dependencies.
+// xLLM loads it at runtime and only uses the xllm_yr_store_* C ABI below.
 //
 // Everything here is host memory: KVCacheStore's offload cache lives on the
 // CPU, and the object KV client copies host buffers into the store. The device

@@ -287,7 +287,13 @@ bool YuanRongStoreBackend::load_bridge() {
   // The host hides its private RPC dependencies at link time. DEEPBIND would
   // also bypass the global allocator for SDK free() calls, while the shared
   // C++ runtime can still allocate through that allocator.
-  bridge_handle_ = dlopen(library.c_str(), RTLD_NOW | RTLD_LOCAL);
+  // DS owns process-wide registries and background state beyond KVClient.
+  // Balance dlopen/dlclose handles while retaining the SDK until process exit.
+  int32_t load_flags = RTLD_NOW | RTLD_LOCAL;
+#ifdef RTLD_NODELETE
+  load_flags |= RTLD_NODELETE;
+#endif
+  bridge_handle_ = dlopen(library.c_str(), load_flags);
   if (bridge_handle_ == nullptr) {
     LOG(ERROR) << "Failed to load the YuanRong store bridge " << library
                << " (set store_yuanrong_bridge_path to override): "

@@ -127,6 +127,37 @@ VMM 的使用方式和容量配置说明见[KV Cache 与模型权重的虚拟内
 | `store_yuanrong_bridge_path` | `string` | `""` | `libxllm_yuanrong_store_bridge.so` 的路径，为空时使用动态库搜索路径。 |
 | `enable_control_h2d_block_num` | `bool` | `false` | 是否控制 H2D 拷贝的 block 数。 |
 
+构建 YuanRong 后端需要 DS 独立安装的静态 PIC SDK，其 CMake package 必须提供
+`DatasystemPrivate::client`。DS 可以保留自己的第三方版本和补丁；SDK 与 bridge
+必须使用兼容的架构、标准库和 C++ ABI。安装 DS Python wheel 不能替代此 SDK。
+
+```bash
+YUANRONG_ROOT=/path/to/ds-sdk-install \
+  bash scripts/build_support/build_xllm_yuanrong_wheel.sh --device npu
+```
+
+直接使用 CMake 时，指定 `-DUSE_YUANRONG=ON -DYUANRONG_ROOT=/path/to/ds-sdk-install`。
+xllm 将 DS 客户端及其私有依赖封装进 `libxllm_yuanrong_store_bridge.so`，只导出五个
+`xllm_yr_store_*` C 接口，并在 Linux 链接后检查动态依赖和符号。
+运行时由 xllm 动态加载 bridge，无需将 DS SDK 的库目录加入 `LD_LIBRARY_PATH`。
+
+也可以只编译同一个 bridge 目标，先验证 SDK，无需安装 Torch 或设备编译工具链：
+
+```bash
+cmake -S cmake/yuanrong_bridge -B build-yuanrong-bridge \
+  -DYUANRONG_ROOT=/path/to/ds-sdk-install -DCMAKE_BUILD_TYPE=Release
+cmake --build build-yuanrong-bridge -j4
+python3 -m scripts.build_support.validate_yuanrong_bridge \
+  --bridge build-yuanrong-bridge/xllm/libxllm_yuanrong_store_bridge.so \
+  --host 127.0.0.1 --port <worker-port> --clients 4
+```
+
+验证脚本需要已经启动的真实 Host KV Worker。2026-11-16 交付的 DS SDK 对应源码
+`7fa20a784473a8cffa758759ac81984d0967ba30`，限定 Linux aarch64、libstdc++、ABI=1；
+bridge 不继承宿主 Torch 的 ABI 编译选项。该 SDK 已知需要 GLIBC 2.34、GLIBCXX 3.4.30
+和 CXXABI 1.3.13。Linux 下 bridge 使用 `RTLD_NODELETE` 保持加载至进程退出；
+销毁客户端不等于卸载 DS 的进程级状态。
+
 ## BeamSearchConfig
 
 | 参数名称 | 类型 | 默认值 | 参数含义 |
