@@ -141,6 +141,8 @@ xllm 将 DS 客户端及其私有依赖封装进 `libxllm_yuanrong_store_bridge.
 `xllm_yr_store_*` C 接口，并在 Linux 链接后检查动态依赖和符号。
 运行时由 xllm 动态加载 bridge，无需将 DS SDK 的库目录加入 `LD_LIBRARY_PATH`。
 
+真实 A2 环境的完整操作流程见 [A2 环境编译与验证 DataSystem 接入](/zh/hardware/ascend_a2_yuanrong/)。
+
 也可以只编译同一个 bridge 目标，先验证 SDK，无需安装 Torch 或设备编译工具链：
 
 ```bash
