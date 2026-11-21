@@ -82,11 +82,14 @@ cc_library(
     hierarchy_kv_transfer.h
     $<$<OR:$<BOOL:${USE_NPU}>,$<BOOL:${USE_MLU}>,$<BOOL:${USE_DCU}>>:mooncake_kv_transfer.h>
     mooncake_kv_transfer_engine.h
+    kv_cache_store_backend.h
+    $<$<BOOL:${USE_YUANRONG}>:yuanrong_store_backend.h>
   SRCS
     kv_transfer.cpp
     kv_transport_codec.cpp
     kv_cache_store.cpp
     mooncake_store_backend.cpp
+    $<$<BOOL:${USE_YUANRONG}>:yuanrong_store_backend.cpp>
     host_transfer/layout.cpp
     host_transfer/transfer.cpp
     host_transfer/transfer_utils.cpp
@@ -97,6 +100,8 @@ cc_library(
     hierarchy_kv_transfer.cpp
     $<$<OR:$<BOOL:${USE_NPU}>,$<BOOL:${USE_MLU}>,$<BOOL:${USE_DCU}>>:mooncake_kv_transfer.cpp>
     $<$<OR:$<BOOL:${USE_NPU}>,$<BOOL:${USE_MLU}>,$<BOOL:${USE_DCU}>>:mooncake_kv_transfer_engine.cpp>
+  DEFINES
+    $<$<BOOL:${USE_YUANRONG}>:USE_YUANRONG>
   DEPS
     :content_hash
     :cache_layout
@@ -117,4 +122,5 @@ cc_library(
     $<$<BOOL:${USE_NPU}>:platform_npu>
     $<$<BOOL:${USE_DCU}>:hip::host>
     $<$<BOOL:${USE_MLU}>:mlu_kernels>
+    $<$<BOOL:${USE_YUANRONG}>:${CMAKE_DL_LIBS}>
 )

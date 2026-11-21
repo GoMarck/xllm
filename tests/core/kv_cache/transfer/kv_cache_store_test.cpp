@@ -658,5 +658,23 @@ TEST(MooncakeStoreBackendTest, ValidatesRegistrationRangesBeforeSetup) {
                    .has_value());
 }
 
+#if defined(USE_YUANRONG)
+TEST(YuanRongStoreBackendTest, StoreInitFailsInsteadOfFallingBackToMooncake) {
+  KVCache host_cache = make_attention_cache(/*host_blocks=*/4, /*width=*/8);
+  HostCacheStoreIndex index;
+  index[BlockType::KV].emplace_back(
+      HostCacheStoreEntry{/*cache_handle=*/0, "main", &host_cache});
+
+  KVCacheStoreInitConfig config = make_store_config();
+  config.backend = "yuanrong";
+  config.yuanrong_bridge_path = "/nonexistent/libxllm_yuanrong_store_bridge.so";
+
+  // Falling back to Mooncake here would put blocks somewhere the operator did
+  // not ask for, so init has to fail.
+  KVCacheStore store;
+  EXPECT_FALSE(store.init(config, std::move(index)));
+}
+#endif
+
 }  // namespace
 }  // namespace xllm
