@@ -121,7 +121,24 @@ xLLM 使用 gflags 管理服务启动参数。`--model <PATH>` 是唯一必填�
 | `store_master_server_address` | `string` | `""` | Store master 地址。单机模式使用 `IP:Port`；etcd 高可用模式使用 `etcd://IP:Port;IP:Port;...`。 |
 | `store_metadata_server` | `string` | `""` | KV Cache Store metadata service 的地址。 |
 | `store_local_hostname` | `string` | `""` | KV Cache Store client 的本地主机名。 |
+| `store_backend` | `string` | `"mooncake"` | KV Cache Store 后端，可选 `mooncake` 或 `yuanrong`；`yuanrong` 需要以 `USE_YUANRONG` 构建。 |
+| `store_yuanrong_host` | `string` | `""` | `store_backend=yuanrong` 时使用的 YuanRong worker 主机名，为空时使用 `127.0.0.1`。 |
+| `store_yuanrong_port` | `int32` | `0` | `store_backend=yuanrong` 时使用的 YuanRong worker 端口。 |
+| `store_yuanrong_timeout_ms` | `int32` | `500` | 单次 YuanRong 存储请求的上限时间，单位毫秒；缓存未命中需快速失败，连接超时由 bridge 单独设置（10 秒）。 |
+| `store_yuanrong_bridge_path` | `string` | `""` | `libxllm_yuanrong_store_bridge.so` 的路径，为空时使用动态库搜索路径。 |
 | `enable_control_h2d_block_num` | `bool` | `false` | 是否控制 H2D 拷贝的 block 数。 |
+
+xLLM 的 Host KV bridge 链接静态 PIC target `Datasystem::client_static`，在运行时通过 C 接口连接独立部署的 DS Worker。以下命令从固定的子模块构建 A2 wheel：
+
+```bash
+git submodule update --init third_party/yuanrong-datasystem
+MAX_JOBS=32 CMAKE_ARGS="-DUSE_YUANRONG=ON" \
+  python3 setup.py --device npu bdist_wheel
+```
+
+`MAX_JOBS` 同时控制 xLLM 和 DS 第三方及 Client 的构建并行度。若只想调整 DS，可在 `CMAKE_ARGS` 中指定 `-DDS_STATIC_SDK_JOBS=N`。两者均未指定时，DS 使用环境变量 `CMAKE_BUILD_PARALLEL_LEVEL`，缺省为 8。原生 Linux 源码构建可通过 `DS_OPENSOURCE_DIR` 复用第三方缓存。
+
+使用已安装的静态 SDK 时，在 `CMAKE_ARGS` 中添加 `-DCMAKE_PREFIX_PATH=<SDK 安装前缀>`。如果此前显式指定过 DS 源码目录，可再传 `-DDS_STATIC_SDK_SOURCE_DIR=` 清除缓存的源码路径。如有多个 SDK，使用 `-DDatasystem_DIR=<前缀>/lib/cmake/Datasystem` 精确选择。
 
 ## SchedulerConfig
 

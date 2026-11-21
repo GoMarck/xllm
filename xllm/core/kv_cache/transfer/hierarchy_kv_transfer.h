@@ -71,6 +71,7 @@ class HierarchyKVTransfer final {
     PROPERTY(uint32_t, layers_wise_copy_batchs) = 1;
     PROPERTY(bool, enable_mla) = false;
     PROPERTY(bool, enable_kvcache_store) = false;
+    PROPERTY(std::string, store_backend) = "mooncake";
     PROPERTY(std::string, store_protocol) = "rdma";
     PROPERTY(std::string, store_rdma_devices) = "";
     PROPERTY(std::string, store_master_server_address) = "";
@@ -78,6 +79,11 @@ class HierarchyKVTransfer final {
     PROPERTY(std::string, store_local_hostname) = "";
     PROPERTY(std::string, store_namespace) = "";
     PROPERTY(uint32_t, store_worker_id) = 0;
+    PROPERTY(std::string, store_yuanrong_host) = "";
+    PROPERTY(int32_t, store_yuanrong_port) = 0;
+    // One store request's deadline; connect timeout is set by the bridge.
+    PROPERTY(int32_t, store_yuanrong_timeout_ms) = 500;
+    PROPERTY(std::string, store_yuanrong_bridge_path) = "";
   };
 
   HierarchyKVTransfer(const Options& options, const torch::Device& device);

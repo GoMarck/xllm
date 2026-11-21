@@ -25,6 +25,8 @@ limitations under the License.
 #include <string>
 #include <vector>
 
+#include "core/kv_cache/transfer/kv_cache_store_backend.h"
+
 namespace xllm {
 
 struct MooncakeStoreBackendConfig {
@@ -41,22 +43,19 @@ struct MooncakeRegisteredRange {
   size_t bytes = 0;
 };
 
-struct MooncakeMultiBuffer {
-  std::vector<void*> addresses;
-  std::vector<size_t> sizes;
-};
+using MooncakeMultiBuffer = StoreBuffer;
 
-class MooncakeStoreBackend final {
+class MooncakeStoreBackend final : public KVCacheStoreBackend {
  public:
   MooncakeStoreBackend() = default;
-  ~MooncakeStoreBackend();
+  ~MooncakeStoreBackend() override;
 
   bool init(const MooncakeStoreBackendConfig& config,
             const std::vector<MooncakeRegisteredRange>& ranges);
   std::vector<uint8_t> batch_put(
       const std::vector<std::string>& keys,
-      const std::vector<MooncakeMultiBuffer>& buffers);
-  bool get(const std::string& key, const MooncakeMultiBuffer& buffer);
+      const std::vector<MooncakeMultiBuffer>& buffers) override;
+  bool get(const std::string& key, const MooncakeMultiBuffer& buffer) override;
 
  private:
   friend class MooncakeStoreBackendTestPeer;

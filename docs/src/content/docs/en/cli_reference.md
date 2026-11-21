@@ -121,7 +121,24 @@ Current support covers ordinary non-PD text inference with prefix caching enable
 | `store_master_server_address` | `string` | `""` | Store master address. Use `IP:Port` in standalone mode or `etcd://IP:Port;IP:Port;...` in etcd-backed HA mode. |
 | `store_metadata_server` | `string` | `""` | Address of the KV Cache Store metadata service. |
 | `store_local_hostname` | `string` | `""` | Local host name of the KV Cache Store client. |
+| `store_backend` | `string` | `"mooncake"` | KV Cache Store backend, `mooncake` or `yuanrong`. `yuanrong` requires a build with `USE_YUANRONG`. |
+| `store_yuanrong_host` | `string` | `""` | YuanRong worker host used when `store_backend=yuanrong`; empty uses `127.0.0.1`. |
+| `store_yuanrong_port` | `int32` | `0` | YuanRong worker port used when `store_backend=yuanrong`. |
+| `store_yuanrong_timeout_ms` | `int32` | `500` | Upper bound on a single YuanRong store request, in milliseconds. A cache miss must fail fast; the bridge uses a separate 10 s connect timeout. |
+| `store_yuanrong_bridge_path` | `string` | `""` | Path to `libxllm_yuanrong_store_bridge.so`. Empty uses the loader search path. |
 | `enable_control_h2d_block_num` | `bool` | `false` | Whether to control the number of H2D copy blocks. |
+
+The xLLM Host KV bridge links the static PIC target `Datasystem::client_static` and uses a C interface to connect to a separately deployed DS Worker at runtime. To build an A2 wheel from the pinned submodule:
+
+```bash
+git submodule update --init third_party/yuanrong-datasystem
+MAX_JOBS=32 CMAKE_ARGS="-DUSE_YUANRONG=ON" \
+  python3 setup.py --device npu bdist_wheel
+```
+
+`MAX_JOBS` sets the parallelism for xLLM, the DS dependencies and the client. To override only DS, add `-DDS_STATIC_SDK_JOBS=N` to `CMAKE_ARGS`. When neither is set, DS uses the environment variable `CMAKE_BUILD_PARALLEL_LEVEL`, defaulting to 8. Set `DS_OPENSOURCE_DIR` to reuse a dependency cache for native Linux source builds.
+
+To consume an installed static SDK, add `-DCMAKE_PREFIX_PATH=<SDK install prefix>` to `CMAKE_ARGS`. If a source directory was previously specified, also pass `-DDS_STATIC_SDK_SOURCE_DIR=` to clear the cached path. If multiple SDKs are installed, select one with `-DDatasystem_DIR=<prefix>/lib/cmake/Datasystem`.
 
 ## SchedulerConfig
 
