@@ -66,6 +66,17 @@ cc_library(
 
 cc_library(
   NAME
+    host_store_writer
+  HDRS
+    host_store_writer.h
+  SRCS
+    host_store_writer.cpp
+  DEPS
+    Threads::Threads
+)
+
+cc_library(
+  NAME
     kv_transfer
   HDRS
     kv_transfer.h
@@ -104,6 +115,7 @@ cc_library(
     $<$<BOOL:${USE_YUANRONG}>:USE_YUANRONG>
   DEPS
     :content_hash
+    :host_store_writer
     :cache_layout
     :common
     :kv_cache

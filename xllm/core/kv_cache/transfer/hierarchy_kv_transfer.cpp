@@ -28,6 +28,7 @@ limitations under the License.
 #include "core/kv_cache/layout/kv_cache_shape.h"
 #include "core/kv_cache/storage/host_cache_layout.h"
 #include "core/kv_cache/storage/kv_cache_create_options.h"
+#include "core/kv_cache/transfer/host_store_writer.h"
 #include "core/kv_cache/transfer/kv_cache_store.h"
 #include "core/util/tensor_helper.h"
 
@@ -243,6 +244,11 @@ bool HierarchyKVTransfer::finalize_registration() {
     CHECK(kv_cache_store_->init(store_config, std::move(store_index)))
         << "Failed to initialize " << store_config.backend
         << " KV cache store.";
+    if (kv_cache_store_->is_storage_writer()) {
+      constexpr size_t kMaxOutstandingStoreBlocks = 256;
+      store_writer_ =
+          std::make_unique<HostStoreWriter>(kMaxOutstandingStoreBlocks);
+    }
     LOG(INFO) << "[KVCacheStore][StoreEngine] ready, endpoint="
               << store_local_hostname << ", protocol=" << store_config.protocol
               << ", worker_rank=" << options_.store_worker_id()
@@ -262,6 +268,7 @@ void HierarchyKVTransfer::shutdown() {
   shutdown_ = true;
   // No load task may outlive transfer resources or Host cache storage.
   load_threadpool_.reset();
+  store_writer_.reset();
   device_.set_device();
   if (host_kv_transfer_ != nullptr) {
     host_kv_transfer_->drain();
@@ -455,15 +462,12 @@ HostKVRequest HierarchyKVTransfer::make_request(
 uint32_t HierarchyKVTransfer::transfer_kv_blocks(
     uint64_t batch_id,
     const std::vector<BlockTransferInfo>& block_transfer_info) {
-  CHECK(registration_finalized_)
-      << "Hierarchy KV cache registration is not finalized.";
-  CHECK(!shutdown_) << "Hierarchy KV cache transfer is shut down.";
   CHECK(!block_transfer_info.empty());
-  device_.set_device();
   switch (block_transfer_info.front().transfer_type) {
     case TransferType::D2H2G:
-      return offload(block_transfer_info);
+      return offload_async(block_transfer_info).get();
     case TransferType::H2D: {
+      prepare_transfer();
       if (host_kv_transfer_ == nullptr) {
         LOG(ERROR) << "Host KV load requested without Host cache.";
         return 0;
@@ -596,50 +600,77 @@ bool HierarchyKVTransfer::supports_block_type(CacheRole role,
              domain->host_caches_by_type.end();
 }
 
-uint32_t HierarchyKVTransfer::offload(
-    const std::vector<BlockTransferInfo>& block_transfer_info) {
-  if (host_kv_transfer_ == nullptr) {
-    return static_cast<uint32_t>(block_transfer_info.size());
-  }
-  HostKVRequest request =
-      make_request(block_transfer_info, TransferType::D2H2G);
-  if (!offload_to_host(request)) {
-    LOG(ERROR) << "Offload to Host cache failed.";
-    return 0;
-  }
-  VLOG(1) << "[HostKV][OffloadComplete] blocks=" << block_transfer_info.size()
-          << ", target_mappings=" << request.target_mappings.size()
-          << ", draft_mappings=" << request.draft_mappings.size();
-  if (kv_cache_store_ != nullptr) {
-    const auto put_start = std::chrono::steady_clock::now();
-    const uint32_t put_count = kv_cache_store_->batch_put(block_transfer_info);
-    const int64_t elapsed_us =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - put_start)
-            .count();
-    const size_t failed = block_transfer_info.size() > put_count
-                              ? block_transfer_info.size() - put_count
-                              : 0;
-    if (failed != 0) {
-      LOG(WARNING) << "[KVCacheStore] BatchPut partially failed: " << put_count
-                   << "/" << block_transfer_info.size();
-    }
-    VLOG(1) << "[KVCacheStore][OffloadPut] worker_rank="
-            << options_.store_worker_id() << ", tp_rank=" << options_.tp_rank()
-            << ", tp_size=" << options_.tp_size()
-            << ", kv_split_size=" << options_.kv_split_size()
-            << ", kv_split_rank=" << options_.kv_split_rank()
-            << ", enable_mla=" << options_.enable_mla()
-            << ", store_write_enabled=" << kv_cache_store_->is_storage_writer()
-            << ", blocks=" << block_transfer_info.size()
-            << ", success=" << put_count << ", failed=" << failed
-            << ", elapsed_us=" << elapsed_us;
-  }
-  return static_cast<uint32_t>(block_transfer_info.size());
+void HierarchyKVTransfer::prepare_transfer() {
+  CHECK(registration_finalized_)
+      << "Hierarchy KV cache registration is not finalized.";
+  CHECK(!shutdown_) << "Hierarchy KV cache transfer is shut down.";
+  device_.set_device();
 }
 
-bool HierarchyKVTransfer::offload_to_host(const HostKVRequest& request) {
-  return host_kv_transfer_->offload(request);
+std::future<uint32_t> HierarchyKVTransfer::offload_async(
+    std::vector<BlockTransferInfo> blocks) {
+  prepare_transfer();
+  uint32_t count = static_cast<uint32_t>(blocks.size());
+  if (host_kv_transfer_ != nullptr) {
+    if (!offload_to_host(blocks)) {
+      count = 0;
+    } else if (store_writer_ != nullptr) {
+      return store_writer_->submit(
+          count,
+          std::packaged_task<uint32_t()>([this, blocks = std::move(blocks)] {
+            device_.set_device();
+            return put_host_blocks(blocks);
+          }));
+    } else if (kv_cache_store_ != nullptr) {
+      // Replica ranks only report the skipped PUT.
+      count = put_host_blocks(blocks);
+    }
+  }
+
+  std::promise<uint32_t> completed;
+  completed.set_value(count);
+  return completed.get_future();
+}
+
+bool HierarchyKVTransfer::offload_to_host(
+    const std::vector<BlockTransferInfo>& blocks) {
+  const auto request = make_request(blocks, TransferType::D2H2G);
+  if (!host_kv_transfer_->offload(request)) {
+    LOG(ERROR) << "Offload to Host cache failed.";
+    return false;
+  }
+  VLOG(1) << "[HostKV][OffloadComplete] blocks=" << blocks.size()
+          << ", target_mappings=" << request.target_mappings.size()
+          << ", draft_mappings=" << request.draft_mappings.size();
+  return true;
+}
+
+uint32_t HierarchyKVTransfer::put_host_blocks(
+    const std::vector<BlockTransferInfo>& block_transfer_info) {
+  const auto put_start = std::chrono::steady_clock::now();
+  const uint32_t put_count = kv_cache_store_->batch_put(block_transfer_info);
+  const int64_t elapsed_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now() - put_start)
+          .count();
+  const size_t failed = block_transfer_info.size() > put_count
+                            ? block_transfer_info.size() - put_count
+                            : 0;
+  if (failed != 0) {
+    LOG(WARNING) << "[KVCacheStore] BatchPut partially failed: " << put_count
+                 << "/" << block_transfer_info.size();
+  }
+  VLOG(1) << "[KVCacheStore][OffloadPut] worker_rank="
+          << options_.store_worker_id() << ", tp_rank=" << options_.tp_rank()
+          << ", tp_size=" << options_.tp_size()
+          << ", kv_split_size=" << options_.kv_split_size()
+          << ", kv_split_rank=" << options_.kv_split_rank()
+          << ", enable_mla=" << options_.enable_mla()
+          << ", store_write_enabled=" << kv_cache_store_->is_storage_writer()
+          << ", blocks=" << block_transfer_info.size()
+          << ", success=" << put_count << ", failed=" << failed
+          << ", elapsed_us=" << elapsed_us;
+  return static_cast<uint32_t>(block_transfer_info.size());
 }
 
 bool HierarchyKVTransfer::load_from_host(const HostKVRequest& request,
